@@ -1,0 +1,80 @@
+
+import discord
+from discord.ext import commands
+from discord import app_commands
+
+TOKEN = "MTQ4NzgwODMyNzI1MjU3ODM5Nw.GVctSh.PfjGX9r7DDYi3vxXahlBQ1odoAJ42CEn0uz2SU"
+NOME_ORG = "DK SPORTS"
+COR_EMBED = 0x00ff88
+
+SLOTS = {
+    "1x1": 2,
+    "2x2": 4,
+    "3x3": 6,
+    "4x4": 8,
+}
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+filas = {modo: [] for modo in SLOTS}
+
+def build_embed(modo):
+    fila = filas[modo]
+    slots_total = SLOTS[modo]
+    jogadores_str = "\n".join(f"<@{uid}>" for uid in fila) if fila else "_Nenhum jogador ainda_"
+    embed = discord.Embed(title=f"{modo} | {NOME_ORG}", color=COR_EMBED)
+    embed.add_field(name="Modo", value=f"{modo} GRÁTIS", inline=True)
+    embed.add_field(name="Valor", value="0,00", inline=True)
+    embed.add_field(name=f"Jogadores ({len(fila)}/{slots_total})", value=jogadores_str, inline=False)
+    return embed
+
+class FilaView(discord.ui.View):
+    def __init__(self, modo):
+        super().__init__(timeout=None)
+        self.modo = modo
+        btn_entrar = discord.ui.Button(label="Entrar na Fila", style=discord.ButtonStyle.success, custom_id=f"entrar_{modo}")
+        btn_sair = discord.ui.Button(label="Sair da Fila", style=discord.ButtonStyle.danger, custom_id=f"sair_{modo}")
+        btn_entrar.callback = self.entrar
+        btn_sair.callback = self.sair
+        self.add_item(btn_entrar)
+        self.add_item(btn_sair)
+
+    async def entrar(self, interaction):
+        uid = interaction.user.id
+        fila = filas[self.modo]
+        if uid in fila:
+            await interaction.response.send_message("Você já está na fila!", ephemeral=True)
+            return
+        fila.append(uid)
+        await interaction.response.edit_message(embed=build_embed(self.modo), view=self)
+        if len(fila) >= SLOTS[self.modo]:
+            mencoes = " ".join(f"<@{u}>" for u in fila)
+            filas[self.modo].clear()
+            await interaction.followup.send(f"🚀 Fila {self.modo} completa! {mencoes}")
+            await interaction.edit_original_response(embed=build_embed(self.modo), view=self)
+
+    async def sair(self, interaction):
+        uid = interaction.user.id
+        fila = filas[self.modo]
+        if uid not in fila:
+            await interaction.response.send_message("Você não está na fila.", ephemeral=True)
+            return
+        fila.remove(uid)
+        await interaction.response.edit_message(embed=build_embed(self.modo), view=self)
+
+@bot.tree.command(name="filas", description="Abre os painéis de fila")
+@app_commands.checks.has_permissions(administrator=True)
+async def cmd_filas(interaction):
+    await interaction.response.send_message("Painéis criados!", ephemeral=True)
+    for modo in SLOTS:
+        await interaction.channel.send(embed=build_embed(modo), view=FilaView(modo))
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Bot online: {bot.user}")
+
+bot.run(TOKEN)
